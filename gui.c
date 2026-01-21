@@ -278,7 +278,7 @@ static void activate(GtkApplication *app, gpointer user_data)
     /* Create window */
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "VU-Bar");
-    gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_DOCK);
+    //gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_DOCK);
     gtk_window_set_icon_name(GTK_WINDOW(window), "multimedia-volume-control");
     gtk_window_set_default_size(GTK_WINDOW(window), pos.width, pos.height);
     gtk_window_set_resizable(GTK_WINDOW(window), TRUE);
