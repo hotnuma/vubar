@@ -62,8 +62,10 @@ static int              bar_space = 3;
 static int              display_monitor = -1;
 static enum placement   display_placement = PLACEMENT_RIGHT;
 
+static float           *peak_line    = NULL;
 static float           *peak         = NULL;
 
+static float            decay_line   = 0.99f;
 static float            decay        = 0.95f;
 static float            red_limit    = 0.891251f;   /* Amplitude within 1 dB of clipping */
 static float            green_limit  = 0.707946f;   /* Amplitude within 3 dB of clipping */
@@ -122,7 +124,6 @@ static gboolean draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
     }
 
     cairo_set_line_width(cr, 1.0);
-
     if (display_placement == PLACEMENT_LEFT || display_placement == PLACEMENT_RIGHT) {
         for (int i = 0; tickmarks[i].amplitude >= 0.0f; i++) {
             const int  y = area.y + bar_space + (1.0f - tickmarks[i].amplitude)*(area.height - 2*bar_space);
@@ -138,6 +139,24 @@ static gboolean draw(GtkWidget *widget, cairo_t *cr, gpointer user_data)
             cairo_set_source_rgb(cr, tickmarks[i].red, tickmarks[i].green, tickmarks[i].blue);
             cairo_move_to(cr, x, area.y + 2);
             cairo_line_to(cr, x, area.y + area.width - 2);
+            cairo_stroke(cr);
+        }
+    }
+
+    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    cairo_set_line_width(cr, 2.0);
+    for (int i = 0; i < channels; i++) {
+        const double c = (peak_line[i] < 0.0f) ? 0.0 : (peak_line[i] < 1.0f) ? peak_line[i] : 1.0;
+        if (display_placement == PLACEMENT_LEFT || display_placement == PLACEMENT_RIGHT) {
+            const int  y = area.y + bar_space + (1.0f - c)*(area.height - 2*bar_space);
+            cairo_move_to(cr, area.x +  i   *(bar_space + bar_size), y);
+            cairo_line_to(cr, area.x + (i+1)*(bar_space + bar_size), y);
+            cairo_stroke(cr);
+        } else
+        if (display_placement == PLACEMENT_TOP || display_placement == PLACEMENT_BOTTOM) {
+            const int  x = area.x + bar_space + c*(area.width - 2*bar_space);
+            cairo_move_to(cr, x, area.y +  i   *(bar_space + bar_size));
+            cairo_line_to(cr, x, area.y + (i+1)*(bar_space + bar_size));
             cairo_stroke(cr);
         }
     }
@@ -161,9 +180,13 @@ static gboolean tick(GtkWidget *widget, GdkFrameClock *fclk, gpointer user_data)
         for (int c = 0; c < channels; c++) {
             peak[c] *= decay;
             peak[c]  = (new_peak[c] > peak[c]) ? new_peak[c] : peak[c];
+
+            peak_line[c] *= decay_line;
+            peak_line[c]  = (new_peak[c] > peak_line[c]) ? new_peak[c] : peak_line[c];
         }
         gtk_widget_queue_draw(widget);
     }
+
 
     return G_SOURCE_CONTINUE;
 }
@@ -174,15 +197,28 @@ static void screen_changed(GtkWidget *widget, GdkScreen *old_screen, gpointer us
     gtk_widget_set_visual(widget, gdk_screen_get_system_visual(gtk_widget_get_screen(widget)));
 }
 
-static void place(GdkRectangle *to)
+static void place(GdkRectangle *to, gulong *reserve)
 {
-    if (!to)
+    if (!to || !reserve)
         return;
 
     to->x = 0;
     to->y = 0;
     to->width = bar_space + (bar_size + bar_space) * channels;
     to->height = bar_space + (bar_size + bar_space) * channels;
+
+    reserve[ 0] = 0;  /* left */
+    reserve[ 1] = 0;  /* right */
+    reserve[ 2] = 0;  /* top */
+    reserve[ 3] = 0;  /* bottom */
+    reserve[ 4] = 0;  /* left_start_y */
+    reserve[ 5] = 0;  /* left_end_y */
+    reserve[ 6] = 0;  /* right_start_y */
+    reserve[ 7] = 0;  /* right_end_y */
+    reserve[ 8] = 0;  /* top_start_x */
+    reserve[ 9] = 0;  /* top_end_x */
+    reserve[10] = 0;  /* bottom_start_x */
+    reserve[11] = 0;  /* bottom_end_x */
 
     GdkDisplay  *d = gdk_display_get_default();
     GdkMonitor  *m = gdk_display_get_monitor(d, display_monitor);
@@ -198,21 +234,33 @@ static void place(GdkRectangle *to)
     case PLACEMENT_LEFT:
         to->x = w.x;
         to->height = w.height;
+        reserve[0] = to->width;
+        reserve[4] = w.y;
+        reserve[5] = w.y + w.height - 1;
         return;
 
     case PLACEMENT_RIGHT:
         to->x = w.x + w.width - to->width;
         to->height = w.height;
+        reserve[1] = to->width;
+        reserve[6] = w.y;
+        reserve[7] = w.y + w.height - 1;
         return;
 
     case PLACEMENT_TOP:
         to->y = w.y;
         to->width = w.width;
+        reserve[2] = to->height;
+        reserve[8] = w.x;
+        reserve[9] = w.x + w.width - 1;
         return;
 
     case PLACEMENT_BOTTOM:
         to->y = w.y + w.height - to->height;
         to->width = w.width;
+        reserve[3] = to->height;
+        reserve[10] = w.x;
+        reserve[11] = w.x + w.width - 1;
         return;
     }
 }
@@ -221,13 +269,16 @@ static void activate(GtkApplication *app, gpointer user_data)
 {
     (void)user_data; /* Silence unused parameter warning; generates no code */
 
+    gulong reserve[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
     /* Compute where to place the window */
     GdkRectangle pos;
-    place(&pos);
+    place(&pos, reserve);
 
     /* Create window */
     GtkWidget *window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "VU-Bar");
+    gtk_window_set_type_hint(GTK_WINDOW(window), GDK_WINDOW_TYPE_HINT_DOCK);
     gtk_window_set_icon_name(GTK_WINDOW(window), "multimedia-volume-control");
     gtk_window_set_default_size(GTK_WINDOW(window), pos.width, pos.height);
     gtk_window_set_resizable(GTK_WINDOW(window), TRUE);
@@ -240,6 +291,15 @@ static void activate(GtkApplication *app, gpointer user_data)
     gtk_application_add_window(app, GTK_WINDOW(window));
     gtk_widget_show_all(window);
     gtk_window_set_keep_above(GTK_WINDOW(window), TRUE);
+
+    GdkWindow *w = gtk_widget_get_window(window);
+    if (w) {
+        GdkAtom strut = gdk_atom_intern_static_string("_NET_WM_STRUT");
+        GdkAtom partial = gdk_atom_intern_static_string("_NET_WM_STRUT_PARTIAL");
+        GdkAtom cardinal = gdk_atom_intern_static_string("CARDINAL");
+        gdk_property_change(w, strut, cardinal, 32, GDK_PROP_MODE_REPLACE, (guchar *)reserve, 4);
+        gdk_property_change(w, partial, cardinal, 32, GDK_PROP_MODE_REPLACE, (guchar *)reserve, 12);
+    }
 }
 
 
@@ -455,6 +515,7 @@ int main(int argc, char *argv[])
     }
 
     peak = calloc((size_t)channels * sizeof (float), samples);
+    peak_line = calloc((size_t)channels * sizeof (float), samples);
     if (!peak) {
         fprintf(stderr, "Out of memory.\n");
         g_object_unref(app);
