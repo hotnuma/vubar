@@ -14,6 +14,7 @@ static volatile int     done = 0;
 static pa_simple       *audio = NULL;
 static size_t           audio_channels = 0;
 static size_t           audio_samples = 0;
+static float            audio_gain = 1.0;
 static int32_t         *audio_buffer = NULL;    /* audio_buffer[audio_samples][audio_channels] */
 static int32_t         *audio_min = NULL;       /* audio_min[audio_channels] */
 static int32_t         *audio_max = NULL;       /* audio_max[audio_channels] */
@@ -23,6 +24,7 @@ static pthread_mutex_t  peak_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t   peak_update = PTHREAD_COND_INITIALIZER;
 static float           *peak_amplitude = NULL;
 static volatile int     peak_available = 0;
+
 
 int vu_peak_available(void)
 {
@@ -76,12 +78,14 @@ static void *worker(void *unused)
         pthread_mutex_lock(&peak_lock);
         if (peak_available++) {
             for (size_t c = 0; c < audio_channels; c++) {
-                const float  amplitude = (audio_max[c] > audio_min[c]) ? audio_max[c] / 2147483647.0f : audio_min[c] / 2147483647.0f;
+                float  amplitude = (audio_max[c] > audio_min[c]) ? audio_max[c] / 2147483647.0f : audio_min[c] / 2147483647.0f;
+                amplitude *= audio_gain;
                 peak_amplitude[c] = (peak_amplitude[c] > amplitude) ? peak_amplitude[c] : amplitude;
             }
         } else {
             for (size_t c = 0; c < audio_channels; c++) {
-                const float  amplitude = (audio_max[c] > audio_min[c]) ? audio_max[c] / 2147483647.0f : audio_min[c] / 2147483647.0f;
+                float  amplitude = (audio_max[c] > audio_min[c]) ? audio_max[c] / 2147483647.0f : audio_min[c] / 2147483647.0f;
+                amplitude *= audio_gain;
                 peak_amplitude[c] = amplitude;
             }
         }
@@ -173,7 +177,8 @@ int vu_start(const char *server,
              const char *stream,
              int         channels,
              int         rate,
-             int         samples)
+             int         samples,
+             float       gain)
 {
     pa_sample_spec  samplespec;
     pa_buffer_attr  bufferspec;
@@ -246,6 +251,8 @@ int vu_start(const char *server,
 
     audio_channels = channels;
     audio_samples  = samples;
+    
+    audio_gain = gain;
 
     pthread_attr_init(&attrs);
     pthread_attr_setstacksize(&attrs, 2 * PTHREAD_STACK_MIN);

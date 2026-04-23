@@ -507,7 +507,14 @@ int main(int argc, char *argv[])
     if (samples < 1)
         samples = 1;
 
-    val = vu_start(server, "vu-bar", device, "VU monitor", channels, rate, samples);
+    val = vu_start(server,
+                   "vu-bar",
+                   device,
+                   "VU monitor",
+                   channels,
+                   rate,
+                   samples,
+                   2.0);
     if (val) {
         fprintf(stderr, "Cannot monitor audio source: %s.\n", vu_error(val));
         g_object_unref(app);

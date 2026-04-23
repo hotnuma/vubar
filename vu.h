@@ -19,7 +19,8 @@ int  vu_start(const char *server,
               const char *stream,
               int         channels,
               int         rate,
-              int         samples);
+              int         samples,
+              float       gain);
 
 /**
  * Convert vu_start() return value to a string
