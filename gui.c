@@ -57,6 +57,7 @@ static const char      *device = NULL;
 static int              channels = 2;
 static int              rate = 48000;
 static int              updates = 60;
+static float            gain = 1.0;
 static int              bar_size = 4;
 static int              bar_space = 3;
 static int              display_monitor = -1;
@@ -354,6 +355,7 @@ int usage(const char *arg0)
     fprintf(stderr, "       -c CHANNELS  Number of channels\n");
     fprintf(stderr, "       -r RATE      Samples per second\n");
     fprintf(stderr, "       -u COUNT     Peak calculations per second\n");
+    fprintf(stderr, "       -g GAIN      Gain\n");
     fprintf(stderr, "       -m MONITOR   Display monitor number\n");
     fprintf(stderr, "       -p WHERE     Meter placement on display\n");
     fprintf(stderr, "       -B PIXELS    Bar thickness in pixels\n");
@@ -380,7 +382,7 @@ int main(int argc, char *argv[])
 
     gtk_init(&argc, &argv);
 
-    while ((opt = getopt(argc, argv, "hs:d:c:r:u:m:p:B:S:")) != -1) {
+    while ((opt = getopt(argc, argv, "hs:d:c:r:u:g:m:p:B:S:")) != -1) {
         switch (opt) {
 
         case 'h':
@@ -425,6 +427,14 @@ int main(int argc, char *argv[])
                 return EXIT_FAILURE;
             }
             updates = val;
+            break;
+
+        case 'g':
+            gain = strtof(optarg, NULL);
+            if (gain < 0.1 || gain > 10.0) {
+                fprintf(stderr, "%s: Invalid gain.\n", optarg);
+                return EXIT_FAILURE;
+            }
             break;
 
         case 'm':
@@ -514,7 +524,7 @@ int main(int argc, char *argv[])
                    channels,
                    rate,
                    samples,
-                   2.0);
+                   gain);
     if (val) {
         fprintf(stderr, "Cannot monitor audio source: %s.\n", vu_error(val));
         g_object_unref(app);
